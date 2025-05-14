@@ -1,0 +1,81 @@
+import logging
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, ConversationHandler, CallbackContext
+from elasticsearch import Elasticsearch
+from config.config import TELEGRAM_BOT_TOKEN, ELASTICSEARCH_HOST, ELASTICSEARCH_PORT, ELASTICSEARCH_INDEX
+
+logging.basicConfig(level=logging.INFO)
+
+# States for conversation
+GROCERIES, MEAL_TYPE, PREP_TIME, DIET = range(4)
+
+# Start command handler
+def start(update: Update, context: CallbackContext):
+    update.message.reply_text('Welcome! Please list the groceries you have (comma separated):')
+    return GROCERIES
+
+def groceries(update: Update, context: CallbackContext):
+    context.user_data['groceries'] = update.message.text.split(',')
+    reply_keyboard = [['breakfast', 'lunch', 'dinner', 'snack']]
+    update.message.reply_text('What meal type?', reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True))
+    return MEAL_TYPE
+
+def meal_type(update: Update, context: CallbackContext):
+    context.user_data['meal_type'] = update.message.text
+    update.message.reply_text('Max preparation time (minutes)?')
+    return PREP_TIME
+
+def prep_time(update: Update, context: CallbackContext):
+    context.user_data['prep_time'] = update.message.text
+    update.message.reply_text('Any special diet? (e.g. low carb, no sugar, etc)')
+    return DIET
+
+def diet(update: Update, context: CallbackContext):
+    context.user_data['diet'] = update.message.text
+    # Query Elasticsearch
+    es = Elasticsearch([{'host': ELASTICSEARCH_HOST, 'port': ELASTICSEARCH_PORT}])
+    # Build a query (simplified example)
+    query = {
+        "query": {
+            "bool": {
+                "must": [
+                    {"match": {"title": context.user_data['meal_type']}}
+                ],
+                "should": [
+                    {"match": {"ingredients": g.strip()}} for g in context.user_data['groceries']
+                ]
+            }
+        }
+    }
+    res = es.search(index=ELASTICSEARCH_INDEX, body=query)
+    if res['hits']['hits']:
+        recipe = res['hits']['hits'][0]['_source']
+        update.message.reply_text(f"Best match: {recipe['title']}\nIngredients: {recipe['ingredients']}\nInstructions: {recipe['instructions']}")
+    else:
+        update.message.reply_text('No exact match found. Here are some close options:')
+        # Optionally, show closest matches
+    return ConversationHandler.END
+
+def cancel(update: Update, context: CallbackContext):
+    update.message.reply_text('Bye!')
+    return ConversationHandler.END
+
+def main():
+    updater = Updater(TELEGRAM_BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('start', start)],
+        states={
+            GROCERIES: [MessageHandler(Filters.text & ~Filters.command, groceries)],
+            MEAL_TYPE: [MessageHandler(Filters.text & ~Filters.command, meal_type)],
+            PREP_TIME: [MessageHandler(Filters.text & ~Filters.command, prep_time)],
+            DIET: [MessageHandler(Filters.text & ~Filters.command, diet)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel)]
+    )
+    dp.add_handler(conv_handler)
+    updater.start_polling()
+    updater.idle()
+
+if __name__ == '__main__':
+    main() 
