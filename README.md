@@ -16,6 +16,7 @@ Zimbozapp is a data engineering project that demonstrates a modern data pipeline
 ```
 zimbozapp/
 ├── .env
+├── .env.example
 ├── README.md
 ├── docker-compose.yml
 ├── requirements.txt
@@ -44,12 +45,28 @@ zimbozapp/
     └── config.py
 ```
 
-## Setup & Usage
-1. **Clone the repo** and create a `.env` file with your secrets (see `.env.example`).
-2. **Run `docker-compose up`** to start all services locally.
-3. **Airflow** will fetch new recipes weekly and push to Kafka.
-4. **PySpark** will process and store data in MinIO and Elasticsearch.
-5. **Telegram Bot** will interact with users and fetch recipes from Elasticsearch.
+## First Time Setup & Usage
+1. **Clone the repository:**
+   ```sh
+   git clone <repo-url>
+   cd zimbozapp
+   ```
+2. **Create your `.env` file:**
+   - Copy the example file and fill in your secrets:
+     ```sh
+     cp .env.example .env
+     # Edit .env and add your TELEGRAM_BOT_TOKEN and SPOONACULAR_API_KEY
+     ```
+3. **Build and start all services with Docker Compose:**
+   ```sh
+   docker-compose up --build
+   ```
+   - This will start Kafka, MinIO, Elasticsearch, Spark, Airflow, and the Telegram bot.
+4. **Access Airflow UI (optional):**
+   - Open [http://localhost:8081](http://localhost:8081) in your browser to monitor DAG runs.
+5. **Start using the Telegram bot:**
+   - Open Telegram and search for your bot (using the username you set up with BotFather).
+   - Start a chat and follow the prompts to get recipe suggestions based on your groceries and preferences.
 
 ## Notes
 - Designed for Apple Silicon (M1/ARM) compatibility.

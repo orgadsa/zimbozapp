@@ -27,7 +27,7 @@ def meal_type(update: Update, context: CallbackContext):
 
 def prep_time(update: Update, context: CallbackContext):
     context.user_data['prep_time'] = update.message.text
-    update.message.reply_text('Any special diet? (e.g. low carb, no sugar, etc)')
+    update.message.reply_text("Any special diet? (e.g. low carb, no sugar, etc. Type 'none' if no special diet)")
     return DIET
 
 def diet(update: Update, context: CallbackContext):
@@ -52,8 +52,7 @@ def diet(update: Update, context: CallbackContext):
         recipe = res['hits']['hits'][0]['_source']
         update.message.reply_text(f"Best match: {recipe['title']}\nIngredients: {recipe['ingredients']}\nInstructions: {recipe['instructions']}")
     else:
-        update.message.reply_text('No exact match found. Here are some close options:')
-        # Optionally, show closest matches
+        update.message.reply_text('Sorry, no recipes found for your criteria. Try different groceries or meal type.')
     return ConversationHandler.END
 
 def cancel(update: Update, context: CallbackContext):

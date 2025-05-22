@@ -1,5 +1,5 @@
 from airflow import DAG
-from airflow.operators.python_operator import PythonOperator
+from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
 import requests
 import json
@@ -36,7 +36,7 @@ dag = DAG(
     'fetch_spoonacular_recipes',
     default_args=default_args,
     description='Fetch recipes from Spoonacular API and send to Kafka',
-    schedule_interval='@weekly',
+    schedule='@weekly',
     catchup=False,
 )
 
