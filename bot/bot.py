@@ -34,14 +34,13 @@ def diet(update: Update, context: CallbackContext):
     context.user_data['diet'] = update.message.text
     # Query Elasticsearch
     es = Elasticsearch([{'host': ELASTICSEARCH_HOST, 'port': ELASTICSEARCH_PORT}])
-    # Build a query (simplified example)
+    # Build a query using only 'should' clauses for meal type and ingredients
     query = {
         "query": {
             "bool": {
-                "must": [
-                    {"match": {"title": context.user_data['meal_type']}}
-                ],
                 "should": [
+                    {"match": {"title": context.user_data['meal_type']}}
+                ] + [
                     {"match": {"ingredients": g.strip()}} for g in context.user_data['groceries']
                 ]
             }

@@ -1,3 +1,5 @@
+import sys
+sys.path.append('/app')
 from elasticsearch import Elasticsearch
 from config.config import ELASTICSEARCH_HOST, ELASTICSEARCH_PORT, ELASTICSEARCH_INDEX
 

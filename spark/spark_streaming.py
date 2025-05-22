@@ -1,3 +1,10 @@
+import os
+os.environ["PYSPARK_SUBMIT_ARGS"] = (
+    "--packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 pyspark-shell"
+)
+import sys
+sys.path.append('/app')
+import io
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import from_json, col
 from pyspark.sql.types import StructType, StringType, ArrayType, IntegerType
@@ -27,11 +34,17 @@ df = spark.readStream \
     .format("kafka") \
     .option("kafka.bootstrap.servers", KAFKA_BROKER) \
     .option("subscribe", KAFKA_TOPIC) \
+    .option("startingOffsets", "earliest") \
     .load()
 
 # Parse the value as JSON
 recipes = df.selectExpr("CAST(value AS STRING) as json") \
     .select(from_json(col("json"), schema).alias("data")).select("data.*")
+
+# Debug print function
+def debug_print(batch_df, batch_id):
+    print(f"Batch {batch_id} row count: {batch_df.count()}")
+    batch_df.show()
 
 # Write raw data to MinIO (S3)
 def write_to_minio(batch_df, batch_id):
@@ -58,6 +71,6 @@ def write_to_elasticsearch(batch_df, batch_id):
 
 # Start streaming queries
 recipes.writeStream \
-    .foreachBatch(lambda df, epochId: (write_to_minio(df, epochId), write_to_elasticsearch(df, epochId))) \
+    .foreachBatch(lambda df, epochId: (debug_print(df, epochId), write_to_minio(df, epochId), write_to_elasticsearch(df, epochId))) \
     .start() \
     .awaitTermination() 

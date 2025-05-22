@@ -57,8 +57,11 @@ services:
     <<: *default-platform
     image: bitnami/spark:latest
     container_name: spark
+    user: "root"
     environment:
       - SPARK_MODE=master
+      - PYTHONPATH=/app
+      - HOME=/root
     ports:
       - "7077:7077"
       - "8080:8080"
@@ -66,6 +69,11 @@ services:
       - kafka
       - minio
       - elasticsearch
+    volumes:
+      - ./spark:/app/spark
+      - ./config:/app/config
+      - ./spark/requirements.txt:/requirements.txt
+      - ./spark/user-jars:/opt/bitnami/spark/user-jars
 
   airflow:
     <<: *default-platform
