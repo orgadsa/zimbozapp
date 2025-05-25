@@ -86,7 +86,7 @@ fetch_task = PythonOperator(
 
 run_spark_streaming = BashOperator(
     task_id='run_spark_streaming',
-    bash_command='docker exec spark python /app/spark/spark_streaming.py',
+    bash_command='docker exec spark env AIRFLOW_RUN=1 python /app/spark/spark_streaming.py',
     dag=dag,
 )
 

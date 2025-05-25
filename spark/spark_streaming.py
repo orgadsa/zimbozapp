@@ -1,8 +1,7 @@
 """
-Spark Streaming Job for Zimbozapp
-- Reads recipes from Kafka
-- Writes raw data to MinIO
-- Indexes processed recipes to Elasticsearch
+Spark Job for Zimbozapp
+- Batch mode for Airflow: processes all available Kafka data and exits
+- Streaming mode for real-time: runs indefinitely
 """
 import os
 os.environ["PYSPARK_SUBMIT_ARGS"] = (
@@ -34,18 +33,6 @@ spark = SparkSession.builder \
     .appName("RecipeKafkaSparkStreaming") \
     .getOrCreate()
 
-# Read from Kafka
-df = spark.readStream \
-    .format("kafka") \
-    .option("kafka.bootstrap.servers", KAFKA_BROKER) \
-    .option("subscribe", KAFKA_TOPIC) \
-    .option("startingOffsets", "earliest") \
-    .load()
-
-# Parse the value as JSON
-recipes = df.selectExpr("CAST(value AS STRING) as json") \
-    .select(from_json(col("json"), schema).alias("data")).select("data.*")
-
 def write_to_minio(batch_df, batch_id):
     """Write each batch as a JSON file to MinIO."""
     minio_client = Minio(
@@ -76,8 +63,31 @@ def write_to_elasticsearch(batch_df, batch_id):
         except Exception as e:
             print(f"Failed to index document in Elasticsearch: {e}")
 
-# Start streaming queries
-recipes.writeStream \
-    .foreachBatch(lambda df, epochId: (write_to_minio(df, epochId), write_to_elasticsearch(df, epochId))) \
-    .start() \
-    .awaitTermination() 
+# Batch mode for Airflow: process all available Kafka data and exit
+if os.environ.get('AIRFLOW_RUN', '0') == '1':
+    df = spark.read \
+        .format("kafka") \
+        .option("kafka.bootstrap.servers", KAFKA_BROKER) \
+        .option("subscribe", KAFKA_TOPIC) \
+        .option("startingOffsets", "earliest") \
+        .option("endingOffsets", "latest") \
+        .load()
+    recipes = df.selectExpr("CAST(value AS STRING) as json") \
+        .select(from_json(col("json"), schema).alias("data")).select("data.*")
+    write_to_minio(recipes, 0)
+    write_to_elasticsearch(recipes, 0)
+    print("Batch processing complete. Exiting.")
+else:
+    # Streaming mode: run indefinitely
+    df = spark.readStream \
+        .format("kafka") \
+        .option("kafka.bootstrap.servers", KAFKA_BROKER) \
+        .option("subscribe", KAFKA_TOPIC) \
+        .option("startingOffsets", "earliest") \
+        .load()
+    recipes = df.selectExpr("CAST(value AS STRING) as json") \
+        .select(from_json(col("json"), schema).alias("data")).select("data.*")
+    recipes.writeStream \
+        .foreachBatch(lambda df, epochId: (write_to_minio(df, epochId), write_to_elasticsearch(df, epochId))) \
+        .start() \
+        .awaitTermination() 
