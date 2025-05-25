@@ -93,6 +93,7 @@ services:
       - ./airflow/dags:/opt/airflow/dags
       - ./zimbozapp/.env:/opt/airflow/.env
       - ./airflow/requirements.txt:/requirements.txt
+      - /var/run/docker.sock:/var/run/docker.sock
     command: bash -c "pip install --no-cache-dir -r /requirements.txt && airflow standalone"
 
   bot:

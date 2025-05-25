@@ -1,3 +1,9 @@
+"""
+Spark Streaming Job for Zimbozapp
+- Reads recipes from Kafka
+- Writes raw data to MinIO
+- Indexes processed recipes to Elasticsearch
+"""
 import os
 os.environ["PYSPARK_SUBMIT_ARGS"] = (
     "--packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 pyspark-shell"
@@ -11,13 +17,12 @@ from pyspark.sql.types import StructType, StringType, ArrayType, IntegerType
 from minio import Minio
 from elasticsearch import Elasticsearch
 import json
-import os
 from config.config import (
     KAFKA_BROKER, KAFKA_TOPIC, MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY, MINIO_BUCKET,
     ELASTICSEARCH_HOST, ELASTICSEARCH_PORT, ELASTICSEARCH_INDEX
 )
 
-# Define schema for recipes (simplified example)
+# Define schema for recipes
 schema = StructType()\
     .add("id", IntegerType())\
     .add("title", StringType())\
@@ -41,36 +46,38 @@ df = spark.readStream \
 recipes = df.selectExpr("CAST(value AS STRING) as json") \
     .select(from_json(col("json"), schema).alias("data")).select("data.*")
 
-# Debug print function
-def debug_print(batch_df, batch_id):
-    print(f"Batch {batch_id} row count: {batch_df.count()}")
-    batch_df.show()
-
-# Write raw data to MinIO (S3)
 def write_to_minio(batch_df, batch_id):
+    """Write each batch as a JSON file to MinIO."""
     minio_client = Minio(
         MINIO_ENDPOINT,
         access_key=MINIO_ACCESS_KEY,
         secret_key=MINIO_SECRET_KEY,
         secure=False
     )
-    # Save each batch as a JSON file
     data = batch_df.toJSON().collect()
+    if not data:
+        return
     file_data = '\n'.join(data).encode('utf-8')
     file_name = f"recipes_batch_{batch_id}.json"
-    minio_client.put_object(
-        MINIO_BUCKET, file_name, data=io.BytesIO(file_data), length=len(file_data), content_type='application/json'
-    )
+    try:
+        minio_client.put_object(
+            MINIO_BUCKET, file_name, data=io.BytesIO(file_data), length=len(file_data), content_type='application/json'
+        )
+    except Exception as e:
+        print(f"Failed to write to MinIO: {e}")
 
-# Write processed data to Elasticsearch
 def write_to_elasticsearch(batch_df, batch_id):
+    """Index each row in the batch to Elasticsearch."""
     es = Elasticsearch([{'host': ELASTICSEARCH_HOST, 'port': ELASTICSEARCH_PORT}])
     for row in batch_df.collect():
         doc = row.asDict()
-        es.index(index=ELASTICSEARCH_INDEX, body=doc)
+        try:
+            es.index(index=ELASTICSEARCH_INDEX, body=doc)
+        except Exception as e:
+            print(f"Failed to index document in Elasticsearch: {e}")
 
 # Start streaming queries
 recipes.writeStream \
-    .foreachBatch(lambda df, epochId: (debug_print(df, epochId), write_to_minio(df, epochId), write_to_elasticsearch(df, epochId))) \
+    .foreachBatch(lambda df, epochId: (write_to_minio(df, epochId), write_to_elasticsearch(df, epochId))) \
     .start() \
     .awaitTermination() 

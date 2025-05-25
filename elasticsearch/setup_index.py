@@ -1,3 +1,7 @@
+"""
+Elasticsearch Index Setup Script for Zimbozapp
+- Creates the 'recipes' index with the required mapping if it does not exist
+"""
 import sys
 sys.path.append('/app')
 from elasticsearch import Elasticsearch
@@ -16,6 +20,7 @@ mapping = {
 }
 
 def create_index():
+    """Create the recipes index in Elasticsearch if it does not exist."""
     es = Elasticsearch([{'host': ELASTICSEARCH_HOST, 'port': ELASTICSEARCH_PORT}])
     if not es.indices.exists(index=ELASTICSEARCH_INDEX):
         es.indices.create(index=ELASTICSEARCH_INDEX, body=mapping)
