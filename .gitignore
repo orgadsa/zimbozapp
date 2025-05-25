@@ -1,1 +1,29 @@
-.env 
+# Environment variables file - Contains sensitive credentials
+.env
+
+# Python bytecode and cache files
+__pycache__/
+*.pyc
+
+# IDE-specific metadata and configuration
+.cursor/  # Cursor IDE project files
+.idea/    # JetBrains IDEs (IntelliJ, PyCharm, etc.) project files
+*.swp     # Vim editor swap files
+
+# Diagramming tool backup files
+*.drawio.bkp # Backup files from draw.io
+
+# Operating System specific files
+.DS_Store  # macOS specific file for custom folder attributes
+Thumbs.db  # Windows thumbnail cache
+
+# General build artifacts, distribution files, and logs
+build/
+dist/
+*.log
+*.logs
+*.egg-info/ # Python egg metadata
+pip-wheel-metadata/ # Metadata for Python wheels
+
+# Local settings (if you use a local_settings.py for local overrides not to be versioned)
+# local_settings.py
