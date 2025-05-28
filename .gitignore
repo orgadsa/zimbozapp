@@ -27,3 +27,9 @@ pip-wheel-metadata/ # Metadata for Python wheels
 
 # Local settings (if you use a local_settings.py for local overrides not to be versioned)
 # local_settings.py
+
+# New additions from the code block
+.vscode/
+.pytest_cache/
+.mypy_cache/
+node_modules/
