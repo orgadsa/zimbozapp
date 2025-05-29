@@ -2,15 +2,6 @@ x-global: &default-platform
   platform: ${PLATFORM:-linux/arm64}
 
 services:
-  # zookeeper:
-  #   <<: *default-platform
-  #   image: bitnami/zookeeper:latest
-  #   container_name: zookeeper
-  #   ports:
-  #     - "2181:2181"
-  #   environment:
-  #     - ALLOW_ANONYMOUS_LOGIN=yes
-
   kafka:
     <<: *default-platform
     image: bitnami/kafka:latest
@@ -55,9 +46,10 @@ services:
 
   spark:
     <<: *default-platform
-    image: bitnami/spark:latest
+    build:
+      context: ./spark
+      dockerfile: Dockerfile
     container_name: spark
-    user: "root"
     environment:
       - SPARK_MODE=master
       - PYTHONPATH=/app
@@ -87,12 +79,15 @@ services:
       - EXECUTOR=Local
       - _AIRFLOW_WWW_USER_USERNAME=admin
       - _AIRFLOW_WWW_USER_PASSWORD=airflow
+      - PYTHONPATH=${PYTHONPATH}:/app # Add /app to PYTHONPATH
     ports:
       - "8081:8080"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
-      - ./zimbozapp/.env:/opt/airflow/.env
-      - ./airflow/requirements.txt:/requirements.txt
+      - ./.env:/opt/airflow/.env # Corrected path to .env, assuming it's in project root
+      - ./airflow/requirements.txt:/requirements.txt # Airflow specific requirements
+      - ./airflow/requirements-base.txt:/requirements-base.txt
+      - ./config:/app/config # Mount config directory for DAGs
       - /var/run/docker.sock:/var/run/docker.sock
     command: bash -c "pip install --no-cache-dir -r /requirements.txt && airflow standalone"
 

@@ -4,12 +4,10 @@ Spark Job for Zimbozapp
 - Streaming mode for real-time: runs indefinitely
 """
 import os
-os.environ["PYSPARK_SUBMIT_ARGS"] = (
-    "--packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 pyspark-shell"
-)
 import sys
 sys.path.append('/app')
 import io
+import logging # Import logging module
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import from_json, col
 from pyspark.sql.types import StructType, StringType, ArrayType, IntegerType
@@ -51,7 +49,7 @@ def write_to_minio(batch_df, batch_id):
             MINIO_BUCKET, file_name, data=io.BytesIO(file_data), length=len(file_data), content_type='application/json'
         )
     except Exception as e:
-        print(f"Failed to write to MinIO: {e}")
+        logging.error(f"Failed to write to MinIO for batch {batch_id}: {e}") # Use logging.error
 
 def write_to_elasticsearch(batch_df, batch_id):
     """Index each row in the batch to Elasticsearch."""
@@ -61,33 +59,51 @@ def write_to_elasticsearch(batch_df, batch_id):
         try:
             es.index(index=ELASTICSEARCH_INDEX, body=doc)
         except Exception as e:
-            print(f"Failed to index document in Elasticsearch: {e}")
+            logging.error(f"Failed to index document in Elasticsearch for batch {batch_id}, document: {doc.get('id', 'N/A')}: {e}") # Use logging.error
+
+def process_and_write_recipes(kafka_df, batch_id):
+    """Transforms Kafka messages and writes them to MinIO and Elasticsearch."""
+    # Transform the Kafka message value (JSON string) into a structured DataFrame
+    recipes_df = kafka_df.selectExpr("CAST(value AS STRING) as json") \
+        .select(from_json(col("json"), schema).alias("data")).select("data.*")
+    
+    # Filter out rows where the transformation failed (data column is null)
+    # This can happen if the JSON message doesn't match the schema
+    recipes_df = recipes_df.filter(col("id").isNotNull()) # Assuming 'id' is a non-nullable part of your schema
+
+    if recipes_df.count() == 0:
+        print(f"Batch {batch_id}: No valid recipes to process after schema transformation.")
+        return
+
+    print(f"Batch {batch_id}: Processing {recipes_df.count()} recipes.")
+    write_to_minio(recipes_df, batch_id)
+    write_to_elasticsearch(recipes_df, batch_id)
 
 # Batch mode for Airflow: process all available Kafka data and exit
 if os.environ.get('AIRFLOW_RUN', '0') == '1':
-    df = spark.read \
+    print("Starting Spark job in batch mode for Airflow run.")
+    kafka_input_df = spark.read \
         .format("kafka") \
         .option("kafka.bootstrap.servers", KAFKA_BROKER) \
         .option("subscribe", KAFKA_TOPIC) \
         .option("startingOffsets", "earliest") \
         .option("endingOffsets", "latest") \
         .load()
-    recipes = df.selectExpr("CAST(value AS STRING) as json") \
-        .select(from_json(col("json"), schema).alias("data")).select("data.*")
-    write_to_minio(recipes, 0)
-    write_to_elasticsearch(recipes, 0)
+    
+    process_and_write_recipes(kafka_input_df, "airflow_batch_0")
     print("Batch processing complete. Exiting.")
 else:
     # Streaming mode: run indefinitely
-    df = spark.readStream \
+    print("Starting Spark job in streaming mode.")
+    kafka_input_df = spark.readStream \
         .format("kafka") \
         .option("kafka.bootstrap.servers", KAFKA_BROKER) \
         .option("subscribe", KAFKA_TOPIC) \
         .option("startingOffsets", "earliest") \
         .load()
-    recipes = df.selectExpr("CAST(value AS STRING) as json") \
-        .select(from_json(col("json"), schema).alias("data")).select("data.*")
-    recipes.writeStream \
-        .foreachBatch(lambda df, epochId: (write_to_minio(df, epochId), write_to_elasticsearch(df, epochId))) \
-        .start() \
-        .awaitTermination() 
+
+    query = kafka_input_df.writeStream \
+        .foreachBatch(process_and_write_recipes) \
+        .start()
+    
+    query.awaitTermination()

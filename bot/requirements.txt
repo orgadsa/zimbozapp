@@ -1,0 +1,2 @@
+-r requirements-base.txt
+python-telegram-bot>=13.7,<14.0
