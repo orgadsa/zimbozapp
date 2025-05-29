@@ -12,30 +12,47 @@ from airflow.operators.python import PythonOperator
 from airflow.operators.bash import BashOperator
 from datetime import datetime, timedelta
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from kafka import KafkaProducer
-from dotenv import load_dotenv
+# Import configurations from the central config file
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), '../..')) # Add project root to PYTHONPATH
+from config.config import SPOONACULAR_API_KEY, KAFKA_BROKER, KAFKA_TOPIC
 
-# Load config
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../../.env'))
-SPOONACULAR_API_KEY = os.getenv('SPOONACULAR_API_KEY')
-KAFKA_BROKER = os.getenv('KAFKA_BROKER', 'kafka:9092')
-KAFKA_TOPIC = os.getenv('KAFKA_TOPIC', 'recipes')
 
 def fetch_and_send_to_kafka(**kwargs):
-    """Fetch recipes from Spoonacular API and send to Kafka. Use mock data if API is unavailable."""
+    """Fetch recipes from Spoonacular API and send to Kafka. Use mock data if API is unavailable or retries fail."""
     url = f'https://api.spoonacular.com/recipes/random?number=10&apiKey={SPOONACULAR_API_KEY}'
-    response = requests.get(url)
-    logging.info(f"Spoonacular API response status: {response.status_code}")
     recipes = []
-    if response.status_code == 200:
-        try:
-            recipes = response.json().get('recipes', [])
-        except Exception as e:
-            logging.error(f"Failed to parse JSON: {e}")
-            recipes = []
+    
+    session = requests.Session()
+    retry_strategy = Retry(
+        total=3,
+        status_forcelist=[429, 500, 502, 503, 504],
+        backoff_factor=1  # e.g., sleep for 0s, 2s, 4s between retries
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+
+    try:
+        logging.info(f"Attempting to fetch recipes from Spoonacular API: {url}")
+        response = session.get(url, timeout=10) # Added timeout
+        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+        logging.info(f"Spoonacular API response status: {response.status_code}")
+        recipes = response.json().get('recipes', [])
+        if not recipes: # Handles cases where API returns 200 but no recipes or empty list
+             logging.warning("Spoonacular API returned 200 but no recipes found or recipes list is empty.")
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Spoonacular API request failed after retries: {e}")
+    except json.JSONDecodeError as e:
+        logging.error(f"Failed to parse JSON from Spoonacular API response: {e}. Response text: {response.text if 'response' in locals() else 'N/A'}")
+    except Exception as e: # Catch any other unexpected errors
+        logging.error(f"An unexpected error occurred during Spoonacular API call: {e}")
+
     if not recipes:
-        logging.warning(f"No recipes fetched. Response content: {response.text}")
-        # Use mock data if API is unavailable or returns no recipes
+        logging.warning("Failed to fetch recipes from Spoonacular API after retries or due to other errors. Using mock data.")
         recipes = [
             {
                 "title": "Test Recipe",
@@ -86,7 +103,7 @@ fetch_task = PythonOperator(
 
 run_spark_streaming = BashOperator(
     task_id='run_spark_streaming',
-    bash_command='docker exec spark env AIRFLOW_RUN=1 python /app/spark/spark_streaming.py',
+    bash_command='docker exec spark bash -c "pip install --no-cache-dir -r /requirements.txt && env AIRFLOW_RUN=1 python /app/spark/spark_streaming.py"',
     dag=dag,
 )
 
