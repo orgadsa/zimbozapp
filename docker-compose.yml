@@ -46,9 +46,10 @@ services:
 
   spark:
     <<: *default-platform
-    image: bitnami/spark:latest
+    build:
+      context: ./spark
+      dockerfile: Dockerfile
     container_name: spark
-    user: "root"
     environment:
       - SPARK_MODE=master
       - PYTHONPATH=/app
@@ -84,11 +85,11 @@ services:
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./.env:/opt/airflow/.env # Corrected path to .env, assuming it's in project root
-      - ./requirements.txt:/common_requirements.txt # Common requirements
       - ./airflow/requirements.txt:/requirements.txt # Airflow specific requirements
+      - ./airflow/requirements-base.txt:/requirements-base.txt
       - ./config:/app/config # Mount config directory for DAGs
       - /var/run/docker.sock:/var/run/docker.sock
-    command: bash -c "pip install --no-cache-dir -r /common_requirements.txt && pip install --no-cache-dir -r /requirements.txt && airflow standalone"
+    command: bash -c "pip install --no-cache-dir -r /requirements.txt && airflow standalone"
 
   bot:
     <<: *default-platform
